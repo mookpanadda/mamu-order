@@ -148,6 +148,11 @@ textarea.inp { min-height: 72px; resize: vertical; }
 .row-main { flex: 1; min-width: 0; }
 .incart { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; background: var(--soft); color: var(--brand); font-size: 12px; font-weight: 600; display: grid; place-items: center; }
 .ph { width: 100%; height: 100%; display: grid; place-items: center; color: #c9b5a8; }
+/* เมนูหมด (ตั้งจากหน้าพนักงาน) */
+.out .pimg img, .out .thumb img, .out .ph { filter: grayscale(1); opacity: .5; }
+.out .pname, .out .row-main > div:first-child, .out .price { color: var(--muted); }
+.outtag { flex: none; font-size: 12px; font-weight: 600; color: #b42318; background: #fdecea; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.line-main small.out-txt { color: #b42318; font-weight: 600; }
 .ph svg { width: 42%; height: 42%; }
 
 /* ---------- bottom bar ---------- */
@@ -514,6 +519,21 @@ function orderPayload() {
   };
 }
 
+/* ---------------- เมนูหมด ---------------- */
+/** วันที่ของออเดอร์นี้ (โต๊ะ = วันนี้ · ส่ง/มารับ = วันที่เลือก) */
+function orderDate() {
+  const day = isTable() ? S.data.days[0] : currentDay();
+  return day ? day.date : '';
+}
+/** เมนูหมดในวันที่เลือก (sold_out_until = วันสุดท้ายที่หมด) */
+function soldOut(m) {
+  return !!(m && m.sold_out_until && orderDate() <= m.sold_out_until);
+}
+function soldOutMsg(m) {
+  return m.name + ' หมดชั่วคราว' + (isTable() ? '' : ' (ถึง ' + shortDate(m.sold_out_until) + ') ลองเลือกวันอื่นได้นะคะ');
+}
+const cartOut = () => S.cart.find((i) => soldOut(menuById(i.menu_id)));
+
 /* ---------------- slots ---------------- */
 /** รอบของวันนั้นที่ใช้กับแบบที่เลือก (slots.for: delivery / pickup / ว่าง = ทั้งสองแบบ) */
 function slotsOf(day) {
@@ -539,6 +559,11 @@ function pickFirstOpenDay() {
 }
 
 /* ---------------- validation ---------------- */
+/** มีเมนูหมดในตะกร้า → ข้อความเตือน (เช็คตอนกดยืนยันสั่ง · ยังเข้าหน้าตะกร้าได้เพื่อกดเอาออก) */
+function checkSoldOut() {
+  const out = cartOut();
+  return out ? 'เมนู ' + out.name + ' หมดชั่วคราว' + (isTable() ? '' : 'ในวันที่เลือก') + ' กรุณาเอาออกจากตะกร้า' + (isTable() ? '' : ' หรือเลือกวันอื่น') + 'ค่ะ' : '';
+}
 function checkOrderInfo() {
   if (!S.cart.length) return 'ยังไม่ได้เลือกเมนู';
   if (isTable()) return S.data.table.open ? '' : (S.data.table.closed ? 'วันนี้ร้านหยุดค่ะ' : 'ตอนนี้ยังไม่เปิดรับออเดอร์จากโต๊ะค่ะ');
@@ -683,9 +708,10 @@ function viewOrder() {
   // ---- ขายดี ----
   if (best.length) {
     html += '<section class="card" id="sec-best"><h2 class="sec-title">ขายดีที่สุด</h2><div class="grid">' +
-      best.map((m) => '<div class="pcard" data-act="open" data-arg="' + h(m.menu_id) + '"><div class="pimg">' + imgTag(m) +
+      best.map((m) => '<div class="pcard' + (soldOut(m) ? ' out' : '') + '" data-act="open" data-arg="' + h(m.menu_id) + '"><div class="pimg">' + imgTag(m) +
         '<span class="rank">อันดับ ' + m.best_seller_rank + '</span></div><div class="pbody"><div class="pname">' + h(m.name) +
-        '</div><div class="prow"><span class="price">' + fmt(m.price) + ' ฿</span><span class="addbtn">+</span></div></div></div>').join('') +
+        '</div><div class="prow"><span class="price">' + fmt(m.price) + ' ฿</span>' +
+        (soldOut(m) ? '<span class="outtag">หมด</span>' : '<span class="addbtn">+</span>') + '</div></div></div>').join('') +
       '</div></section>';
   }
 
@@ -695,9 +721,10 @@ function viewOrder() {
     html += '<section class="card" id="sec-cat-' + i + '"><div class="sec-head"><h2 class="sec-title">' + h(c) + '</h2><span class="muted"><small>' + items.length + ' รายการ</small></span></div>' +
       items.map((m) => {
         const n = S.cart.filter((x) => x.menu_id === m.menu_id).reduce((a, x) => a + x.qty, 0);
-        return '<div class="row" data-act="open" data-arg="' + h(m.menu_id) + '"><div class="thumb">' + imgTag(m) + '</div>' +
+        const out = soldOut(m);
+        return '<div class="row' + (out ? ' out' : '') + '" data-act="open" data-arg="' + h(m.menu_id) + '"><div class="thumb">' + imgTag(m) + '</div>' +
           '<div class="row-main"><div>' + h(m.name) + '</div><div class="price">' + fmt(m.price) + ' ฿</div></div>' +
-          (n ? '<span class="incart">' + n + '</span>' : '') + '<span class="addbtn">+</span></div>';
+          (n ? '<span class="incart">' + n + '</span>' : '') + (out ? '<span class="outtag">หมดชั่วคราว</span>' : '<span class="addbtn">+</span>') + '</div>';
       }).join('') + '</section>';
   });
   return html;
@@ -721,7 +748,8 @@ function viewCheckout() {
 
   html += '<section class="card"><div class="sec-head"><h2 class="sec-title">รายการ</h2><button class="link" data-act="go" data-arg="order">+ เพิ่มเมนู</button></div>' +
     (S.cart.length ? S.cart.map((i) =>
-      '<div class="line"><div class="line-main">' + h(i.name) + (i.options.length ? '<small>' + h(i.options.join(' / ')) + '</small>' : '') + '</div>' +
+      '<div class="line"><div class="line-main">' + h(i.name) + (i.options.length ? '<small>' + h(i.options.join(' / ')) + '</small>' : '') +
+      (soldOut(menuById(i.menu_id)) ? '<small class="out-txt">หมดชั่วคราว' + (isTable() ? '' : 'ในวันที่เลือก') + ' · กด 🗑 เพื่อเอาออก</small>' : '') + '</div>' +
       stepper('cq', i.qty, i.key, true) + '<div class="line-price">' + fmt(i.unit * i.qty) + '</div></div>'
     ).join('') : '<p class="empty">ตะกร้าว่าง</p>') + '</section>';
 
@@ -953,6 +981,7 @@ const ACT = {
   open: (id) => {
     const m = menuById(id);
     if (!m) return;
+    if (soldOut(m)) return toast(soldOutMsg(m));
     S.sheet = { type: 'item', menu_id: id, picked: defaultPicked(m), qty: 1 };
     renderSheet();
   },
@@ -968,6 +997,7 @@ const ACT = {
   'sq+': () => { S.sheet.qty = Math.min(50, S.sheet.qty + 1); renderSheet(); },
   addToCart: () => {
     const st = S.sheet;
+    if (soldOut(menuById(st.menu_id))) { S.sheet = null; render(); return toast(soldOutMsg(menuById(st.menu_id))); }
     addLine(buildLine(menuById(st.menu_id), st.picked, st.qty));
     S.sheet = null;
     render();
@@ -990,10 +1020,11 @@ const ACT = {
   },
   reorder: () => {
     const last = S.data.lastOrder;
-    let n = 0;
+    let n = 0, out = 0;
     last.items.forEach((i) => {
       const m = menuById(i.menu_id);
-      if (m) { addLine(buildLine(m, pickedFromOptions(m, i.options), i.qty)); n++; }
+      if (m && soldOut(m)) out++;
+      else if (m) { addLine(buildLine(m, pickedFromOptions(m, i.options), i.qty)); n++; }
     });
     if (!S.phone && last.phone) S.phone = last.phone;
     if (!isTable() && last.fulfillment === 'delivery' && S.data.locations.some((l) => l.name === last.location)) {
@@ -1002,7 +1033,7 @@ const ACT = {
       S.locationNote = last.location_note || S.locationNote;
     }
     render();
-    toast(n ? 'ใส่แก้วเดิมลงตะกร้าแล้ว' : 'เมนูเดิมปิดขายแล้ว');
+    toast(n ? 'ใส่แก้วเดิมลงตะกร้าแล้ว' + (out ? ' (มี ' + out + ' เมนูหมดชั่วคราว)' : '') : out ? 'เมนูเดิมหมดชั่วคราว' : 'เมนูเดิมปิดขายแล้ว');
   },
   toCheckout: () => {
     const err = checkOrderInfo();
@@ -1077,7 +1108,7 @@ function requote() {
 async function submitOrder() {
   if (S.busy) return;
   const ph = cleanPhone(S.phone);
-  const err = checkOrderInfo() || (/^0\d{8,9}$/.test(ph) || (isTable() && !ph) ? '' : 'กรุณากรอกเบอร์โทรให้ถูกต้อง');
+  const err = checkOrderInfo() || checkSoldOut() || (/^0\d{8,9}$/.test(ph) || (isTable() && !ph) ? '' : 'กรุณากรอกเบอร์โทรให้ถูกต้อง');
   if (err) return toast(err);
   if (S.couponCode && !(S.quote && S.quote.sig === cartSig())) return toast('กำลังคำนวณส่วนลด ลองกดอีกครั้งนะคะ');
 

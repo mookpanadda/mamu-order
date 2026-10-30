@@ -515,19 +515,24 @@ function orderPayload() {
 }
 
 /* ---------------- slots ---------------- */
+/** รอบของวันนั้นที่ใช้กับแบบที่เลือก (slots.for: delivery / pickup / ว่าง = ทั้งสองแบบ) */
+function slotsOf(day) {
+  return day ? day.slots.filter((s) => !s.for || s.for === S.mode) : [];
+}
+
 function ensureSlot() {
   const days = S.data.days;
   if (!days.length) { S.slotTime = null; return; }
   if (S.dayIdx >= days.length) S.dayIdx = 0;
   const day = days[S.dayIdx];
-  const cur = day.slots.find((s) => s.time === S.slotTime && s.open);
+  const cur = slotsOf(day).find((s) => s.time === S.slotTime && s.open);
   if (!cur) {
-    const first = day.slots.find((s) => s.open);
+    const first = slotsOf(day).find((s) => s.open);
     S.slotTime = first ? first.time : null;
   }
 }
 function pickFirstOpenDay() {
-  const i = S.data.days.findIndex((d) => d.slots.some((s) => s.open));
+  const i = S.data.days.findIndex((d) => slotsOf(d).some((s) => s.open));
   S.dayIdx = i < 0 ? 0 : i;
   S.slotTime = null;
   ensureSlot();
@@ -537,7 +542,7 @@ function pickFirstOpenDay() {
 function checkOrderInfo() {
   if (!S.cart.length) return 'ยังไม่ได้เลือกเมนู';
   if (isTable()) return S.data.table.open ? '' : (S.data.table.closed ? 'วันนี้ร้านหยุดค่ะ' : 'ตอนนี้ยังไม่เปิดรับออเดอร์จากโต๊ะค่ะ');
-  if (!S.slotTime) return 'กรุณาเลือกรอบส่งที่ยังเปิดรับ';
+  if (!S.slotTime) return S.mode === 'pickup' ? 'กรุณาเลือกเวลามารับที่ยังเปิดรับ' : 'กรุณาเลือกรอบส่งที่ยังเปิดรับ';
   if (S.mode === 'delivery' && !S.location) return 'กรุณาเลือกสถานที่ส่ง';
   return '';
 }
@@ -646,14 +651,14 @@ function viewOrder() {
   const need = cups();
   html += '<section class="card"><h2 class="sec-title">' + (pickup ? 'วันและเวลามารับ' : 'วันและรอบส่ง') + '</h2>';
   html += '<div class="chips days">' + d.days.map((x, i) => {
-    const open = x.slots.some((s) => s.open);
+    const open = slotsOf(x).some((s) => s.open);
     const sub = /^(วันนี้|พรุ่งนี้)$/.test(x.label) ? shortDate(x.date) : '';
     const main = sub ? x.label : x.label.replace(/ \d+ \S+$/, '');
     const date = sub || x.label.replace(/^\S+ /, '');
     return '<button class="day ' + (i === S.dayIdx ? 'on ' : '') + (open ? '' : 'closed') + '"' + (open ? '' : ' disabled') +
       ' data-act="day" data-arg="' + i + '"><b>' + h(main) + '</b><small>' + h(open ? date : (x.closed ? 'ร้านหยุด' : 'ปิดรับแล้ว')) + '</small></button>';
   }).join('') + '</div>';
-  html += '<div class="slots">' + (day && day.slots.length ? day.slots.map((s) => {
+  html += '<div class="slots">' + (slotsOf(day).length ? slotsOf(day).map((s) => {
     let status, cls = '';
     if (!s.open) status = s.remaining <= 0 ? 'เต็มแล้ว' : 'ปิดรับแล้ว';
     else if (need > s.remaining) { status = 'เหลือ ' + s.remaining + ' แก้ว · ไม่พอ'; cls = 'low'; }
@@ -663,7 +668,7 @@ function viewOrder() {
       '<small>' + (s.open || s.remaining <= 0 ? 'สั่งได้ถึง ' + h(s.cutoff) + ' น.' : 'ปิดรับตั้งแต่ ' + h(s.cutoff) + ' น.') + '</small></span>' +
       '<span class="slot-left ' + cls + '">' + status + '</span></button>';
   }).join('') : '<p class="empty">ยังไม่มีรอบเปิดรับ</p>') + '</div>' +
-    (closedHint(d.days) || (d.days.every((x) => !x.slots.some((s) => s.open)) ? '<div class="hint">ตอนนี้ปิดรับออเดอร์ทุกรอบแล้ว ลองใหม่พรุ่งนี้นะคะ</div>' : '')) +
+    (closedHint(d.days) || (d.days.every((x) => !slotsOf(x).some((s) => s.open)) ? '<div class="hint">ตอนนี้ปิดรับออเดอร์ทุกรอบแล้ว ลองใหม่พรุ่งนี้นะคะ</div>' : '')) +
     '</section>';
   } // end !table
 
@@ -709,7 +714,7 @@ function viewCheckout() {
   html += '<section class="card"><div class="sec-head"><h2 class="sec-title">' + (S.mode === 'pickup' ? 'มารับที่ร้าน' : 'จัดส่งถึงที่') +
     '</h2><button class="link" data-act="go" data-arg="order">แก้ไข</button></div>' +
     '<div class="kv"><span>วันที่</span><span>' + h(day ? day.label : '-') + '</span></div>' +
-    '<div class="kv"><span>รอบ</span><span>' + h(S.slotTime || '-') + ' น.</span></div>' +
+    '<div class="kv"><span>' + (S.mode === 'pickup' ? 'เวลามารับ' : 'รอบ') + '</span><span>' + h(S.slotTime || '-') + ' น.</span></div>' +
     (S.mode === 'delivery' ? '<div class="kv"><span>สถานที่</span><span>' + h(S.location || '-') + '</span></div>' : '') +
     (S.mode === 'delivery' && S.locationNote ? '<div class="kv"><span>จุดสังเกต</span><span>' + h(S.locationNote) + '</span></div>' : '') +
     '</section>';
@@ -936,7 +941,12 @@ const ACT = {
     const t = document.getElementById(id);
     if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
   },
-  mode: (m) => { S.mode = m; store.set('mode', m); if (S.couponCode) requote(); render(); },
+  mode: (m) => {
+    S.mode = m; store.set('mode', m);
+    if (!slotsOf(currentDay()).some((s) => s.open)) pickFirstOpenDay(); else ensureSlot(); // รอบส่ง / รอบมารับ แยกกัน
+    if (S.couponCode) requote();
+    render();
+  },
   day: (i) => { S.dayIdx = Number(i); ensureSlot(); render(); },
   slot: (t) => { S.slotTime = t; render(); },
   pay: (m) => { S.payMethod = m === 'cash' ? 'cash' : 'promptpay'; store.set('payMethod', S.payMethod); render(); },

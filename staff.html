@@ -109,19 +109,32 @@ small { font-size: 12px; }
 .sheet { position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
 .sheet[hidden] { display: none; }
 .sheet-bg { position: absolute; inset: 0; background: rgba(30,20,18,.5); }
-.sheet-panel { position: relative; width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto; background: var(--card); border-radius: 18px 18px 0 0; padding: 18px 16px calc(16px + env(safe-area-inset-bottom)); }
+.sheet-panel { position: relative; width: 100%; max-width: 560px; max-height: 92vh; max-height: 92dvh; overflow-y: auto; overscroll-behavior: contain; background: var(--card); border-radius: 18px 18px 0 0; padding: 18px 16px calc(16px + env(safe-area-inset-bottom)); }
 .sheet-panel h3 { margin: 0 0 6px; }
 .preview { display: flex; justify-content: center; background: #eee; padding: 12px; border-radius: 12px; margin: 12px 0; max-height: 55vh; overflow: auto; }
 .preview img { width: 100%; max-width: 300px; height: auto; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.12); image-rendering: pixelated; }
 .row-btns { display: flex; gap: 10px; margin-top: 12px; }
 .opt { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
-/* เมนูหมด */
-.m-cat { margin: 14px 0 2px; font-size: 13px; font-weight: 700; color: var(--muted); }
-.m-row { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-.m-row .m-name { flex: 1; min-width: 120px; }
-.m-row.out .m-name { color: var(--muted); text-decoration: line-through; }
-.m-row .btn { padding: 7px 10px; font-size: 13px; }
-.date-inp { width: 100%; font-size: 18px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; margin: 12px 0 4px; background: var(--card); color: var(--ink); }
+/* เมนูหมด (หน้าเต็มจอ) */
+.m-top { position: sticky; top: 0; z-index: 10; background: var(--card); border-bottom: 1px solid var(--line); }
+.m-bar { display: flex; gap: 10px; align-items: center; padding: 10px 14px; }
+.m-bar b { flex: 1; font-size: 16px; }
+.m-search { padding: 0 14px 10px; }
+.m-search input { width: 100%; font-size: 16px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: #faf7f4; color: var(--ink); outline: none; }
+.m-search input:focus { border-color: var(--brand); background: var(--card); }
+.m-sec { padding: 14px 16px 6px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.m-sec.out { color: var(--brand); }
+.m-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 54px; padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--line); text-align: left; font-size: 15px; }
+.m-item:active { background: #faf5f1; }
+.m-item .m-name { flex: 1; min-width: 0; }
+.m-item .m-name small { display: block; font-size: 12px; color: var(--muted); }
+.m-item .m-chev { color: var(--muted); font-size: 18px; }
+.m-item:disabled { opacity: .6; }
+.act-btn { width: 100%; margin-top: 8px; padding: 13px 14px; font-size: 15px; }
+.date-row { display: flex; gap: 8px; margin-top: 8px; }
+.date-row .date-inp { flex: 1; min-width: 0; margin: 0; }
+.date-inp { font-size: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); }
+.act-label { margin-top: 14px; font-size: 13px; color: var(--muted); }
 
 #toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translate(-50%, 16px); z-index: 60; background: rgba(30,20,18,.92); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 14px; max-width: calc(100% - 32px); text-align: center; opacity: 0; pointer-events: none; transition: opacity .2s, transform .25s cubic-bezier(.2,.8,.3,1); }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -358,9 +371,13 @@ function matches(o, f) {
 async function refresh(manual) {
   if (S.loading) return;
   S.loading = true;
+  const seq = S.mutSeq || 0; // ถ้ามีการบันทึกเกิดขึ้นระหว่างโหลด ข้อมูลชุดนี้เก่าแล้ว
+  let stale = false;
   if (manual) { S.spinning = true; const b = document.querySelector('[data-act=refresh]'); if (b) b.classList.add('spinning'); }
   try {
     const data = await api('staffOrders');
+    // ระหว่างรอ มีการกดเปลี่ยนสถานะ / จ่าย / เมนูหมด → ข้อมูลชุดนี้อ่านมาก่อนบันทึก อย่าเอามาทับ โหลดใหม่อีกรอบ
+    if (seq !== (S.mutSeq || 0) || Object.keys(S.busy).length) { stale = true; return; }
     // เตือนทุกออเดอร์ใหม่ทันทีตอนลูกค้ากดสั่ง
     const ids = data.orders.filter(isActive).map((o) => o.order_id);
     if (S.known) {
@@ -385,6 +402,7 @@ async function refresh(manual) {
     S.loading = false;
     S.spinning = false;
     render();
+    if (stale) setTimeout(() => refresh(manual), Object.keys(S.busy).length ? 1500 : 300);
   }
 }
 
@@ -394,6 +412,7 @@ function render() {
   if (!S.pin) { app.innerHTML = '<div class="fade-in">' + viewLogin() + '</div>'; S.viewKey = ''; return; }
   if (!S.data) { app.innerHTML = '<div class="empty fade-in"><div class="spin"></div>กำลังโหลด...</div>'; return; }
   if (S.qr) return; // หน้าป้าย QR วาดแยก ไม่ต้องวาดทับตอน poll
+  if (S.menuPage) { if ($('#mlist')) renderMenuList(); else drawMenuPage(); return; } // วาดแค่รายการ ช่องค้นหาไม่หลุด
 
   // จำตำแหน่งที่เลื่อนแถบ chips ไว้ ไม่ให้เด้งกลับซ้ายสุดตอนวาดใหม่
   const scrolls = Array.from(document.querySelectorAll('.top .chips')).map((el) => el.scrollLeft);
@@ -527,48 +546,83 @@ const todayStr = () => (S.data && S.data.today) || String(S.data && S.data.serve
 const outCount = () => ((S.data && S.data.menu) || []).filter((m) => m.sold_out_until).length;
 const addDays = (ds, n) => { const d = new Date(ds + 'T00:00:00'); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 
-function viewMenuSheet() {
+const menuOf = (id) => ((S.data && S.data.menu) || []).find((x) => x.menu_id === id);
+const outLabel = (m) => m.sold_out_until === todayStr() ? 'หมดวันนี้' : 'หมดถึง ' + shortDate(m.sold_out_until);
+
+/** หน้าเต็มจอ: แถบบน (ค้นหา + ชิป) วาดครั้งเดียว · รายการวาดใหม่ได้ ไม่ทำให้ช่องค้นหาหลุด */
+function openMenuPage() {
+  closeSheet();
+  S.menuPage = true; S.mq = ''; S.mf = 'all';
+  drawMenuPage();
+  window.scrollTo(0, 0);
+}
+function drawMenuPage() {
+  $('#app').innerHTML = '<div class="m-top"><div class="m-bar"><button class="btn ghost" data-act="menuBack">← กลับ</button><b>📋 เมนูหมด</b></div>' +
+    '<div class="m-search"><input id="mq" type="search" enterkeyhint="search" placeholder="🔍 ค้นหาเมนู" autocomplete="off" value="' + h(S.mq) + '"></div>' +
+    '<div class="chips" id="mchips"></div></div><div id="mlist"></div>' +
+    '<div class="muted" style="font-size:12px;padding:14px 16px 40px">แตะเมนูเพื่อปิด/เปิดขาย · เมนูที่หมด ลูกค้าจะเห็นเป็นสีเทาและสั่งไม่ได้ · เลยวันที่ตั้งไว้กลับมาขายเอง</div>';
+  const inp = $('#mq');
+  inp.addEventListener('input', () => { S.mq = inp.value; renderMenuList(); });
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') inp.blur(); });
+  renderMenuList();
+}
+function renderMenuList() {
   const menu = S.data.menu || [];
   const cats = [];
   menu.forEach((m) => { if (cats.indexOf(m.category) < 0) cats.push(m.category); });
-  const today = todayStr();
-  return '<h3>📋 เมนูหมด</h3><div class="muted" style="font-size:13px">กดปิดเมนูที่หมด ลูกค้าจะสั่งเมนูนั้นไม่ได้ (ขึ้นสีเทา) · เลยวันที่ตั้งไว้ กลับมาขายเอง' +
-    (outCount() ? '<br><b style="color:var(--brand)">ตอนนี้ปิดอยู่ ' + outCount() + ' เมนู</b>' : '') + '</div>' +
-    cats.map((c) => '<div class="m-cat">' + h(c || 'อื่นๆ') + '</div>' + menu.filter((m) => m.category === c).map((m) => {
-      const busy = S.busy['m:' + m.menu_id] ? ' disabled' : '';
-      const id = h(m.menu_id);
-      if (m.sold_out_until) {
-        return '<div class="m-row out"><span class="m-name">' + h(m.name) + '</span>' +
-          '<span class="pill red">' + (m.sold_out_until === today ? 'หมดวันนี้' : 'หมดถึง ' + h(shortDate(m.sold_out_until))) + '</span>' +
-          '<button class="btn ok" data-act="soldReopen" data-arg="' + id + '"' + busy + '>เปิดขายคืน</button></div>';
-      }
-      return '<div class="m-row"><span class="m-name">' + h(m.name) + '</span>' +
-        '<button class="btn soft" data-act="soldToday" data-arg="' + id + '"' + busy + '>หมดวันนี้</button>' +
-        '<button class="btn ghost" data-act="soldPick" data-arg="' + id + '"' + busy + '>หมดถึง…</button></div>';
-    }).join('')).join('') +
-    '<div class="row-btns"><button class="btn primary grow" data-act="closeSheet">เสร็จ</button></div>';
-}
-function openMenuSheet() {
-  const panel = $('#sheetPanel'), top = S.menuOpen ? panel.scrollTop : (S.menuScroll || 0);
-  S.menuOpen = true;
-  openSheet(viewMenuSheet());
-  panel.scrollTop = top;
+  if (S.mf !== 'all' && S.mf !== 'out' && cats.indexOf(S.mf) < 0) S.mf = 'all';
+  const q = String(S.mq || '').trim().toLowerCase();
+
+  const chipsEl = $('#mchips'), sl = chipsEl.scrollLeft;
+  const chips = [['all', 'ทั้งหมด', menu.length], ['out', 'หมดอยู่', outCount()]]
+    .concat(cats.map((c) => [c, c || 'อื่นๆ', menu.filter((m) => m.category === c).length]));
+  chipsEl.innerHTML = chips.map((c) => '<button class="chip ' + (S.mf === c[0] ? 'on' : '') + (c[0] === 'out' && c[2] ? ' alert' : '') +
+    '" data-act="menuFilter" data-arg="' + h(c[0]) + '">' + h(c[1]) + '<i>' + c[2] + '</i></button>').join('');
+  chipsEl.scrollLeft = sl;
+
+  const list = menu.filter((m) => (S.mf === 'all' || (S.mf === 'out' ? !!m.sold_out_until : m.category === S.mf)) &&
+    (!q || String(m.name).toLowerCase().indexOf(q) >= 0));
+  const showCat = S.mf === 'all' || S.mf === 'out' || !!q;
+  const row = (m, withCat) => {
+    const busy = !!S.busy['m:' + m.menu_id];
+    return '<button class="m-item" data-act="menuPick" data-arg="' + h(m.menu_id) + '"' + (busy ? ' disabled' : '') + '>' +
+      '<span class="m-name">' + h(m.name) + (withCat ? '<small>' + h(m.category) + '</small>' : '') + '</span>' +
+      '<span class="pill ' + (m.sold_out_until ? 'red' : 'ok') + '">' + (busy ? 'กำลังบันทึก…' : m.sold_out_until ? h(outLabel(m)) : 'ขายอยู่') + '</span>' +
+      '<span class="m-chev">›</span></button>';
+  };
+  const out = list.filter((m) => m.sold_out_until), sell = list.filter((m) => !m.sold_out_until);
+  let html = '';
+  if (!list.length) html = '<div class="empty">' + (S.mf === 'out' && !q ? 'ไม่มีเมนูที่ปิดอยู่ · ขายครบทุกเมนู 👍' : 'ไม่พบเมนู "' + h(S.mq) + '"') + '</div>';
+  if (out.length) html += '<div class="m-sec out">หมดอยู่ · ' + out.length + ' เมนู</div>' + out.map((m) => row(m, showCat)).join('');
+  if (sell.length) {
+    if (S.mf === 'all' && !q) {
+      cats.forEach((c) => {
+        const g = sell.filter((m) => m.category === c);
+        if (g.length) html += '<div class="m-sec">' + h(c || 'อื่นๆ') + '</div>' + g.map((m) => row(m, false)).join('');
+      });
+    } else {
+      html += '<div class="m-sec">ขายอยู่</div>' + sell.map((m) => row(m, !!q)).join('');
+    }
+  }
+  $('#mlist').innerHTML = html;
 }
 async function setSoldOut(id, until, okMsg) {
-  const m = (S.data.menu || []).find((x) => x.menu_id === id);
+  const m = menuOf(id);
   if (!m) return;
+  closeSheet();
   S.busy['m:' + id] = true;
-  if (S.menuOpen) openMenuSheet();
+  S.mutSeq = (S.mutSeq || 0) + 1;
+  if (S.menuPage) renderMenuList();
   try {
     const r = await api('staffSoldOut', { menu_id: id, until: until });
     // S.data อาจถูกโหลดใหม่ระหว่างรอ → หาเมนูใหม่อีกรอบ
-    ((S.data.menu || []).find((x) => x.menu_id === id) || m).sold_out_until = r.sold_out_until;
+    (menuOf(id) || m).sold_out_until = r.sold_out_until;
     toast(okMsg.replace('{name}', m.name));
   } catch (e) {
     toast(e.message);
   }
+  S.mutSeq = (S.mutSeq || 0) + 1;
   delete S.busy['m:' + id];
-  if (S.menuOpen) openMenuSheet();
   render();
 }
 
@@ -587,7 +641,6 @@ function closeSheet() {
   const el = $('#sheet');
   if (el.hidden) return;
   S.sheet = null;
-  S.menuOpen = false;
   el.classList.add('closing');
   clearTimeout(sheetT);
   sheetT = setTimeout(() => { el.hidden = true; el.classList.remove('closing'); $('#sheetPanel').innerHTML = ''; }, 200);
@@ -606,17 +659,21 @@ async function update(id, patch, okMsg) {
   if (!o) return;
   const before = { pay_status: o.pay_status, status: o.status };
   S.busy[id] = true; delete S.fresh[id];
+  S.mutSeq = (S.mutSeq || 0) + 1;
   showBusy(patch.pay_status === 'paid' ? 'กำลังยืนยันการชำระเงิน...' : patch.status === 'cancelled' ? 'กำลังยกเลิกออเดอร์...' : 'กำลังบันทึก...');
   try {
-    await api('staffUpdate', Object.assign({ order_id: id }, patch));
-    Object.assign(o, patch);
+    const r = await api('staffUpdate', Object.assign({ order_id: id }, patch));
+    // S.data อาจถูกโหลดใหม่ระหว่างรอ → แก้ที่ออเดอร์ในชุดปัจจุบัน (ไม่ใช่ตัวเก่า) ด้วยค่าจากเซิร์ฟเวอร์
+    const cur = S.data.orders.find((x) => x.order_id === id) || o;
+    Object.assign(cur, patch, r ? { pay_status: r.pay_status, status: r.status } : {});
     // พนักงานเป็นคนทำให้ออเดอร์ขึ้นมาเอง → ไม่ต้องเตือนซ้ำตอน poll รอบถัดไป
-    if (S.known && isActive(o)) S.known[id] = true;
+    if (S.known && isActive(cur)) S.known[id] = true;
     if (okMsg) toast(okMsg);
   } catch (e) {
     Object.assign(o, before);
     toast(e.message);
   } finally {
+    S.mutSeq = (S.mutSeq || 0) + 1;
     delete S.busy[id];
     hideBusy();
     render();
@@ -887,27 +944,28 @@ const ACT = {
       '<div class="muted" style="font-size:13px;margin-top:10px">เปิดหน้านี้ค้างไว้ ระบบจะเช็คออเดอร์ใหม่ทุก ' + CONFIG.POLL_SECONDS + ' วินาที และพยายามไม่ให้จอดับ</div>' +
       '<div class="row-btns"><button class="btn ghost grow" data-act="logout">ออกจากระบบ</button><button class="btn primary grow" data-act="closeSheet">เสร็จ</button></div>');
   },
-  menuList: () => { S.menuOpen = false; S.menuScroll = 0; openMenuSheet(); },
-  menuBack: () => { S.menuOpen = false; openMenuSheet(); },
+  menuList: () => openMenuPage(),
+  menuBack: () => { S.menuPage = false; closeSheet(); render(); window.scrollTo(0, 0); },
+  menuFilter: (k) => { S.mf = k; renderMenuList(); window.scrollTo(0, 0); },
+  menuPick: (id) => {
+    const m = menuOf(id);
+    if (!m) return;
+    const today = todayStr(), out = !!m.sold_out_until;
+    const def = out && m.sold_out_until > today ? m.sold_out_until : addDays(today, 1);
+    openSheet('<h3>' + h(m.name) + '</h3><div class="muted">ตอนนี้: ' + (out ? '<b style="color:var(--brand)">' + h(outLabel(m)) + '</b>' : '<b style="color:var(--ok)">ขายอยู่</b>') + '</div>' +
+      (out ? '<button class="btn ok act-btn" data-act="soldReopen" data-arg="' + h(id) + '">✓ เปิดขายคืน</button>' : '') +
+      (m.sold_out_until !== today ? '<button class="btn soft act-btn" data-act="soldToday" data-arg="' + h(id) + '">หมดวันนี้ <small style="font-weight:400">(พรุ่งนี้ขายเอง)</small></button>' : '') +
+      '<div class="act-label">หรือ หมดถึงวันที่ (รวมวันนั้นด้วย)</div>' +
+      '<div class="date-row"><input id="soldDate" class="date-inp" type="date" min="' + today + '" max="' + addDays(today, 365) + '" value="' + def + '">' +
+      '<button class="btn primary" data-act="soldDateSave" data-arg="' + h(id) + '">ตั้ง</button></div>' +
+      '<button class="btn ghost act-btn" data-act="closeSheet">ปิด</button>');
+  },
   soldToday: (id) => setSoldOut(id, todayStr(), '{name} · หมดวันนี้ (พรุ่งนี้กลับมาขายเอง)'),
   soldReopen: (id) => setSoldOut(id, '', '{name} · เปิดขายแล้ว'),
-  soldPick: (id) => {
-    const m = (S.data.menu || []).find((x) => x.menu_id === id);
-    if (!m) return;
-    const today = todayStr();
-    S.menuScroll = $('#sheetPanel').scrollTop;
-    S.menuOpen = false;
-    openSheet('<h3>หมดถึงวันที่</h3><div class="muted">' + h(m.name) + ' · ลูกค้าสั่งไม่ได้จนถึงวันที่เลือก (รวมวันนั้นด้วย) แล้วกลับมาขายเอง</div>' +
-      '<input id="soldDate" class="date-inp" type="date" min="' + today + '" max="' + addDays(today, 365) + '" value="' + addDays(today, 1) + '">' +
-      '<div class="row-btns"><button class="btn ghost grow" data-act="menuBack">ย้อนกลับ</button>' +
-      '<button class="btn primary grow" data-act="soldPickSave" data-arg="' + h(id) + '">ปิดเมนูนี้</button></div>');
-  },
-  soldPickSave: (id) => {
+  soldDateSave: (id) => {
     const v = ($('#soldDate') || {}).value || '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return toast('เลือกวันที่ก่อนนะ');
     if (v < todayStr()) return toast('เลือกวันที่ตั้งแต่วันนี้เป็นต้นไป');
-    S.menuOpen = false;
-    openMenuSheet();
     setSoldOut(id, v, '{name} · หมดถึง ' + shortDate(v));
   },
   testSound: () => { unlockAudio(); setTimeout(() => ding(true), 50); },
@@ -915,7 +973,7 @@ const ACT = {
   qrTables: () => { closeSheet(); S.qr = true; renderQr(); window.scrollTo(0, 0); },
   qrBack: () => { S.qr = false; render(); },
   qrPrint: () => window.print(),
-  logout: () => { S.qr = false; S.pin = ''; store.set('pin', ''); S.data = null; S.known = null; closeSheet(); render(); },
+  logout: () => { S.qr = false; S.menuPage = false; S.pin = ''; store.set('pin', ''); S.data = null; S.known = null; closeSheet(); render(); },
 };
 
 document.addEventListener('click', (e) => {

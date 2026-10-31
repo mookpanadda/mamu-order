@@ -115,6 +115,15 @@ small { font-size: 12px; }
 .preview img { width: 100%; max-width: 300px; height: auto; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.12); image-rendering: pixelated; }
 .row-btns { display: flex; gap: 10px; margin-top: 12px; }
 .opt { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
+/* วันหยุดร้าน */
+.closed-bar { margin: 0 14px 10px; padding: 8px 12px; border-radius: 10px; background: #fdecea; color: #b42318; font-size: 14px; font-weight: 600; }
+.cl-row { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.cl-row span { flex: 1; }
+.cl-row small { display: block; color: var(--muted); }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.form-grid label { font-size: 12px; color: var(--muted); display: grid; gap: 4px; }
+.form-grid .full { grid-column: 1 / -1; }
+.txt-inp { width: 100%; font-size: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); }
 /* เมนูหมด (หน้าเต็มจอ) */
 .m-top { position: sticky; top: 0; z-index: 10; background: var(--card); border-bottom: 1px solid var(--line); }
 .m-bar { display: flex; gap: 10px; align-items: center; padding: 10px 14px; }
@@ -447,6 +456,7 @@ function viewTop() {
   const count = (f) => inDate.filter((o) => matches(o, f)).length;
   const cupsOf = (ds) => d.orders.filter((o) => o.slot_date === ds && isActive(o)).reduce((n, o) => n + o.cups, 0);
   const waitN = count('wait');
+  const dayInfo = d.dates.find((x) => x.date === S.date);
   const initial = h((d.shop.name || '☕').charAt(0));
   const logo = d.shop.logo_url
     ? '<div class="logo has-img"><img src="' + h(d.shop.logo_url) + '" alt="" onerror="this.parentNode.classList.remove(\'has-img\');this.replaceWith(\'' + initial.replace(/'/g, '') + '\')"></div>'
@@ -462,7 +472,7 @@ function viewTop() {
     '<div class="chips">' + d.dates.map((x) => {
       const n = d.orders.filter((o) => o.slot_date === x.date && isActive(o)).length;
       return '<button class="chip ' + (x.date === S.date ? 'on' : '') + '" data-act="date" data-arg="' + x.date + '">' + h(x.label) +
-        '<i>' + n + '</i></button>';
+        (x.closed ? ' · หยุด' : '') + '<i>' + n + '</i></button>';
     }).join('') + '</div>' +
     '<div class="chips">' + FILTERS.map((f) => {
       const n = count(f[0]);
@@ -471,7 +481,8 @@ function viewTop() {
         f[1] + '<i>' + n + '</i></button>';
     }).join('') + '</div>' +
     '<div class="chips" style="padding-bottom:10px"><small class="muted">รวม ' + fmt(cupsOf(S.date)) + ' แก้ว' +
-    (waitN ? ' · ยังไม่ส่งสลิป ' + waitN + ' ออเดอร์' : '') + '</small></div></div>';
+    (waitN ? ' · ยังไม่ส่งสลิป ' + waitN + ' ออเดอร์' : '') + '</small></div>' +
+    (dayInfo && dayInfo.closed ? '<div class="closed-bar">📅 วันที่เลือกตั้งเป็นวันหยุดร้าน' + (dayInfo.closed_note ? ' · ' + h(dayInfo.closed_note) : '') + ' (ลูกค้าสั่งเพิ่มไม่ได้)</div>' : '') + '</div>';
 }
 
 function viewList() {
@@ -624,6 +635,39 @@ async function setSoldOut(id, until, okMsg) {
   S.mutSeq = (S.mutSeq || 0) + 1;
   delete S.busy['m:' + id];
   render();
+}
+
+/* ---------------- วันหยุด (เขียนลงแท็บ closures) ---------------- */
+function viewClosures() {
+  const list = S.data.closures || [];
+  const today = todayStr();
+  const range = (c) => c.from === c.to ? shortDate(c.from) : shortDate(c.from) + ' – ' + shortDate(c.to);
+  return '<h3>📅 วันหยุดร้าน</h3><div class="muted" style="font-size:13px">วันที่ตั้งหยุด ลูกค้าสั่งของวันนั้นไม่ได้ทุกแบบ (ส่ง / มารับ / สั่งที่โต๊ะ) · ออเดอร์ที่สั่งไว้ก่อนแล้วไม่ถูกยกเลิกอัตโนมัติ · ปิดร้านกะทันหัน = ตั้งหยุดวันนี้</div>' +
+    (list.length ? list.map((c) => '<div class="cl-row"><span><b>' + h(range(c)) + '</b>' + (c.note ? '<small>' + h(c.note) + '</small>' : '') + '</span>' +
+      '<button class="btn ghost" data-act="closureCancel" data-arg="' + c.row + '|' + h(c.from) + '"' + (S.busy.closure ? ' disabled' : '') + '>ยกเลิก</button></div>').join('')
+      : '<div class="empty" style="padding:16px">ยังไม่ได้ตั้งวันหยุด</div>') +
+    '<div class="act-label" style="margin-top:16px"><b>ตั้งวันหยุดใหม่</b></div>' +
+    '<div class="form-grid"><label>ตั้งแต่<input id="clFrom" class="date-inp" type="date" min="' + today + '" max="' + addDays(today, 365) + '" value="' + addDays(today, 1) + '"></label>' +
+    '<label>ถึง (ว่าง = วันเดียว)<input id="clTo" class="date-inp" type="date" min="' + today + '" max="' + addDays(today, 365) + '"></label>' +
+    '<label class="full">ข้อความถึงลูกค้า (ไม่บังคับ)<input id="clNote" class="txt-inp" maxlength="100" placeholder="เช่น หยุดยาวปีใหม่"></label></div>' +
+    '<div class="row-btns"><button class="btn ghost grow" data-act="settings">← ตั้งค่า</button>' +
+    '<button class="btn primary grow" data-act="closureAdd"' + (S.busy.closure ? ' disabled' : '') + '>ตั้งวันหยุด</button></div>';
+}
+async function closureCall(payload, okMsg) {
+  S.busy.closure = true; S.mutSeq = (S.mutSeq || 0) + 1;
+  openSheet(viewClosures());
+  try {
+    const r = await api('staffClosure', payload);
+    S.data.closures = r.closures;
+    toast(okMsg);
+    delete S.busy.closure; S.mutSeq++;
+    openSheet(viewClosures());
+    refresh(); // อัปเดตชิปวันที่ (หยุด)
+  } catch (e) {
+    delete S.busy.closure; S.mutSeq++;
+    toast(e.message);
+    openSheet(viewClosures());
+  }
 }
 
 /* ---------------- sheet ---------------- */
@@ -917,7 +961,19 @@ const ACT = {
   print: (id) => openPrint(id),
   rawbt: () => sendToRawBT(),
   saveImg: () => saveImage(),
-  closeSheet: () => closeSheet(),
+  closures: () => openSheet(viewClosures()),
+  closureAdd: () => {
+    const from = ($('#clFrom') || {}).value || '', to = ($('#clTo') || {}).value || '';
+    const note = (($('#clNote') || {}).value || '').trim();
+    if (!from) return toast('เลือกวันที่เริ่มหยุดก่อนนะ');
+    if (to && to < from) return toast('วันสุดท้ายต้องไม่ก่อนวันแรก');
+    closureCall({ op: 'add', from: from, to: to || from, note: note }, 'ตั้งวันหยุด ' + shortDate(from) + (to && to !== from ? ' – ' + shortDate(to) : '') + ' แล้ว');
+  },
+  closureCancel: (arg) => {
+    const [row, from] = arg.split('|');
+    confirmBox('ยกเลิกวันหยุด ' + shortDate(from) + '?', 'ลูกค้าจะกลับมาสั่งของวันนั้นได้', 'ยกเลิกวันหยุด',
+      () => closureCall({ op: 'cancel', row: Number(row), from: from }, 'ยกเลิกวันหยุดแล้ว'));
+  },  closeSheet: () => closeSheet(),
   confirmYes: () => { const fn = confirmFn; confirmFn = null; closeSheet(); if (fn) fn(); },
   more: (id) => {
     const o = S.data.orders.find((x) => x.order_id === id);
@@ -940,7 +996,8 @@ const ACT = {
       '<div class="opt"><span>เตือนซ้ำทุก ' + ALARM_EVERY + ' วิ จนกว่าจะแตะจอ</span><button class="chip ' + (S.repeat ? 'on' : '') + '" data-act="toggleRepeat">' + (S.repeat ? 'เปิด' : 'ปิด') + '</button></div>' +
       '<div class="opt"><span>ทดสอบเสียง</span><button class="chip" data-act="testSound">🔔 ลอง</button></div>' +
       '<div class="muted" style="font-size:12px">ความดังขึ้นกับระดับเสียงสื่อ (Media) ของมือถือ ตั้งไว้สูงสุดและปิดโหมดเงียบนะ</div>' +
-      '<button class="btn soft" style="width:100%;margin-top:12px" data-act="qrTables">🔲 ปริ้นป้าย QR สั่งที่โต๊ะ</button>' +
+      '<button class="btn soft" style="width:100%;margin-top:12px" data-act="closures">📅 วันหยุดร้าน' + ((S.data && S.data.closures || []).length ? ' (ตั้งไว้ ' + S.data.closures.length + ')' : '') + '</button>' +
+      '<button class="btn soft" style="width:100%;margin-top:8px" data-act="qrTables">🔲 ปริ้นป้าย QR สั่งที่โต๊ะ</button>' +
       '<div class="muted" style="font-size:13px;margin-top:10px">เปิดหน้านี้ค้างไว้ ระบบจะเช็คออเดอร์ใหม่ทุก ' + CONFIG.POLL_SECONDS + ' วินาที และพยายามไม่ให้จอดับ</div>' +
       '<div class="row-btns"><button class="btn ghost grow" data-act="logout">ออกจากระบบ</button><button class="btn primary grow" data-act="closeSheet">เสร็จ</button></div>');
   },
